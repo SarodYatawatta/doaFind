@@ -16,6 +16,12 @@ Train model:
 ./train.py --iterations 250000
 ```
 
+Generate testing data:
+
+```
+./rfisig.py --seed 2 --array A12
+```
+
 Evaluate model:
 
 ```
