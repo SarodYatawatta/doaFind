@@ -3,12 +3,13 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
+import numpy.matlib
 import torch
 from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
 import argparse
 
-from replaybuffer import ReplayBuffer
+from replaybuffer import ReplayBuffer,ReplayBuffer3D
 import telescope_config
 import phase_utils
 import sparsefit
@@ -36,10 +37,10 @@ else:
 class RFISparse(gym.Env):
     metadata={'render.modes':['human']}
     # nearfield RFI range (m)
-    R_LOW=100e3
+    R_LOW=10e3
     R_HIGH=10000e3
 
-    def __init__(self,T=1000,buffer_size=20000,telescope='A12',nfraction=0.3):
+    def __init__(self,T=1000,buffer_size=20000,telescope='A12',nfraction=0.3,simulate_range=False):
         super(RFISparse,self).__init__()
 
         self.n_time=T
@@ -64,9 +65,17 @@ class RFISparse(gym.Env):
         # Beam polarization
         self.rfi_beam_E=np.eye(2)
 
+        # if simulate_range, sample in range as well 
+        # in addition to az, el
+        self.simulate_range=simulate_range
+
         # nearfield RFI parameters
-        self.nf_fraction=nfraction
-        self.nearfield=False
+        if self.simulate_range:
+           self.nf_fraction=1.0
+           self.nearfield=True
+        else:
+           self.nf_fraction=nfraction
+           self.nearfield=False
 
         # Array settings
         if self.telescope=='SKA':
@@ -89,6 +98,12 @@ class RFISparse(gym.Env):
         # evaluation settings
         self.n_grid=128
         self.patch_size=16
+        # if range is simulated (simulate_range=True)
+        if self.simulate_range:
+           self.n_range=4
+           self.log_r=np.log(np.arange(self.R_LOW,self.R_HIGH,(self.R_HIGH-self.R_LOW)/self.n_range))
+        else:
+           self.n_range=1
 
         # variables to store and pass
         self.arr_dir=None
@@ -97,7 +112,10 @@ class RFISparse(gym.Env):
 
         # replaybuffer
         self.buffer_size=buffer_size
-        self.buffer=ReplayBuffer(self.buffer_size,self.L,self.N,self.n_grid)
+        if self.simulate_range:
+           self.buffer=ReplayBuffer3D(self.buffer_size,self.L,self.N,self.n_grid,self.n_range)
+        else:
+           self.buffer=ReplayBuffer(self.buffer_size,self.L,self.N,self.n_grid)
 
     def __reset_rfi(self):
         self.rfi_phi=np.random.random_sample()*2*np.pi
@@ -125,6 +143,32 @@ class RFISparse(gym.Env):
     def __load_array(self):
         # Load full array antenna positions, also select the sub-arrays
         self.antpos,self.fv=telescope_config.load_array(position_file=self.position_file,L=self.L,N=self.N,telescope=self.telescope)
+
+    def __get_bl_pos(self,idx):
+        # get centroid of each baseline (m)
+        xyz=np.zeros((self.N,3))
+        ants=np.zeros(self.N,dtype=int)
+        for ci in range(self.N):
+          xyz[ci]=self.antpos[self.fv[idx,ci]]
+          ants[ci]=self.fv[idx,ci]
+
+        # find the mapping in the true array to Rxx
+        fvu=np.unique(self.fv.reshape(-1,1))
+        N=fvu.size
+
+        # iterate over baselines (cross-corr) for this array
+        bl=0
+        bl_pos=np.zeros((self.B,3))
+        for p in range(self.N-1):
+            # find position of p in fvu
+            pidx=np.where(fvu==ants[p])[0][0]
+            for q in range(p+1,self.N):
+                qidx=np.where(fvu==ants[q])[0][0]
+                cen_xyz=(xyz[q]+xyz[p])/2
+                bl_pos[bl]=cen_xyz
+                bl += 1
+
+        return bl_pos
 
     def __process_array(self,idx):
         # - simulate RFI signal for given array
@@ -241,6 +285,41 @@ class RFISparse(gym.Env):
         F[2]=F[2]/(np.pi)
         return F
 
+    def __total_error_withrange(self,directions,positions,sintheta,theta,phi,logrange):
+        # theta, phi: grid vectors Ngrid
+        # logrange : log(range) Nr != Ngrid
+        # directions: direction vectors B x 3 (B=total baselines of all arrays)
+        # positions: centroid position B x 3 of each baseline
+        # sintheta: sin(theta) estimate, B x 1
+        # output: cost, theta, phi (Ntheta, Nphi, 3) 
+        Ntheta=theta.size
+        Nphi=phi.size
+        Nr=logrange.size
+        r=np.exp(logrange)+self.array_cen
+        F=np.zeros((4,Nphi,Ntheta,Nr),dtype=np.float32)
+        B=positions.shape[0]
+        for ci in range(Ntheta):
+            for cj in range(Nphi):
+                shat=np.array([np.cos(theta[ci])*np.cos(phi[cj]), np.cos(theta[ci])*np.sin(phi[cj]), np.sin(theta[ci])])
+                for cr in range(Nr):
+                    # find unit vec =R s^ - (pos), for all baselines
+                    rr=np.matlib.repmat(r[cr]*shat,B,1)-positions
+                    ff=np.zeros(B)
+                    for b in range(B):
+                        ff[b]=np.dot(rr[b],directions[b])/(np.linalg.norm(rr[b])+1e-6)
+                    fval=(ff**2-sintheta**2)**2
+                    F[0,cj,ci,cr]=np.sum(fval)
+                    F[1,cj,ci,cr]=theta[ci]
+                    F[2,cj,ci,cr]=phi[cj]
+                    F[3,cj,ci,cr]=logrange[cr]
+
+        # normalize channels 
+        for cr in range(Nr):
+            F[0,:,:,cr]=F[0,:,:,cr]/np.max(np.abs(F[0,:,:,cr]))
+        F[1]=F[1]/(np.pi)
+        F[2]=F[2]/(np.pi)
+        return F
+
     def __simulate(self):
         # Build full correlation matrix
         # find unique stations
@@ -249,7 +328,11 @@ class RFISparse(gym.Env):
         xyz=np.zeros((N,3))
         for ci in range(N):
           xyz[ci]=self.antpos[fvu[ci]]
-        
+        # centroid of array
+        xyz_cen=np.mean(xyz,axis=0)
+        # distance to centroid of array
+        self.array_cen=np.linalg.norm(xyz_cen)
+       
         # spatial array factor for full array
         v_a=xyz @ self.rfi_xyz
         af=np.exp(1j*2*np.pi/self.wavelength*v_a)
@@ -284,8 +367,10 @@ class RFISparse(gym.Env):
 
         # centroid of array
         xyz_cen=np.mean(xyz,axis=0)
+        # distance to centroid of array
+        self.array_cen=np.linalg.norm(xyz_cen)
         # distance to source from coordinate origin
-        rfi_range=self.rfi_range+np.linalg.norm(xyz_cen)
+        rfi_range=self.rfi_range+self.array_cen
         assert(np.isfinite(rfi_range))
         # source xyz
         rfi_xyz = rfi_range*self.rfi_xyz
@@ -331,16 +416,29 @@ class RFISparse(gym.Env):
         self.arr_sintheta=np.zeros((self.L*self.B),dtype=np.float32)
         self.arr_distance=np.zeros((self.L),dtype=np.float32)
 
-        for idx in range(self.L):#range(self.L):
+        if self.simulate_range:
+            arr_pos=np.zeros(self.arr_dir.shape)
+
+        for idx in range(self.L):
+            if self.simulate_range:
+               bl_pos=self.__get_bl_pos(idx)
+               arr_pos[idx*self.B:(idx+1)*self.B]=bl_pos
+
             bl_direction,sintheta,bl_distance=self.__process_array(idx)
             self.arr_dir[idx*self.B:(idx+1)*self.B]=bl_direction
             self.arr_sintheta[idx*self.B:(idx+1)*self.B]=sintheta
             self.arr_distance[idx]=np.log(bl_distance[0]) # only copy first value
         theta=np.arange(0,np.pi/2,np.pi/2/self.n_grid)
         phi=np.arange(0,2*np.pi,2*np.pi/self.n_grid)
-        self.arr_F=self.__total_error(self.arr_dir,self.arr_sintheta,theta,phi)
+        if self.simulate_range:
+            self.arr_F=self.__total_error_withrange(self.arr_dir,arr_pos,self.arr_sintheta,theta,phi,self.log_r)
+        else:
+            self.arr_F=self.__total_error(self.arr_dir,self.arr_sintheta,theta,phi)
 
-        self.buffer.store_observation(self.arr_F,self.arr_dir[::self.B],self.arr_distance,self.arr_sintheta[::self.B], np.array([self.rfi_theta, self.rfi_phi]), self.rfi_freq)
+        if self.simulate_range:
+            self.buffer.store_observation(self.arr_F,self.arr_dir[::self.B],self.arr_distance,self.arr_sintheta[::self.B], np.array([self.rfi_theta, self.rfi_phi, np.log(min(self.rfi_range,self.R_HIGH))]), self.rfi_freq)
+        else:
+            self.buffer.store_observation(self.arr_F,self.arr_dir[::self.B],self.arr_distance,self.arr_sintheta[::self.B], np.array([self.rfi_theta, self.rfi_phi]), self.rfi_freq)
 
     def sparse_fit(self,filename='R.png'):
         fvu=np.unique(self.fv.reshape(-1,1))
@@ -385,17 +483,28 @@ class RFISparse(gym.Env):
         return observation, reward, done, info
         
 
-    def render(self,filename='pp.png',mode='human'):
-        print(f'RFI range {self.rfi_range/1e3} km DOA {self.rfi_theta} {self.rfi_phi} (rad) pol {self.rfi_pol_gamma} {self.rfi_pol_eta} (rad) freq {self.rfi_freq/1e6} MHz')
-        plt.clf()
-        plt.imshow(self.arr_F[0],aspect='auto',origin='lower',extent=[0,np.pi/2,0,2*np.pi])
-        plt.xlabel('Elevation (rad)',fontdict=font)
-        plt.ylabel('Azimuth (rad)',fontdict=font)
-        cbar=plt.colorbar()
-        cbar.set_label('Cost',fontdict=font)
-        plt.suptitle(f'Range {self.rfi_range/1e3:.2f} km Freq {self.rfi_freq/1e6:.2f} MHz Pol {self.rfi_pol_gamma:.2f} {self.rfi_pol_eta:.2f} rad')
-        plt.scatter(self.rfi_theta,self.rfi_phi,color='r')
-        plt.savefig(filename)
+    def render(self,filename_prefix='pp',mode='human'):
+        if self.simulate_range:
+           print(f'RFI range 3D {self.rfi_range/1e3} km DOA {self.rfi_theta} {self.rfi_phi} (rad) pol {self.rfi_pol_gamma} {self.rfi_pol_eta} (rad) freq {self.rfi_freq/1e6} MHz')
+        else:
+           print(f'RFI range {self.rfi_range/1e3} km DOA {self.rfi_theta} {self.rfi_phi} (rad) pol {self.rfi_pol_gamma} {self.rfi_pol_eta} (rad) freq {self.rfi_freq/1e6} MHz')
+        for ci in range(self.n_range):
+           plt.clf()
+           if self.simulate_range:
+              plt.imshow(self.arr_F[0,:,:,ci],aspect='auto',origin='lower',extent=[0,np.pi/2,0,2*np.pi])
+           else:
+              plt.imshow(self.arr_F[0,:,:],aspect='auto',origin='lower',extent=[0,np.pi/2,0,2*np.pi])
+           plt.xlabel('Elevation (rad)',fontdict=font)
+           plt.ylabel('Azimuth (rad)',fontdict=font)
+           cbar=plt.colorbar()
+           cbar.set_label('Cost',fontdict=font)
+           if self.simulate_range:
+              plt.suptitle(f'Range {np.exp(self.log_r[ci])/1e3} {self.rfi_range/1e3:.2f} km Freq {self.rfi_freq/1e6:.2f} MHz Pol {self.rfi_pol_gamma:.2f} {self.rfi_pol_eta:.2f} rad')
+           else:
+              plt.suptitle(f'Range {self.rfi_range/1e3:.2f} km Freq {self.rfi_freq/1e6:.2f} MHz Pol {self.rfi_pol_gamma:.2f} {self.rfi_pol_eta:.2f} rad')
+           plt.scatter(self.rfi_theta,self.rfi_phi,color='r')
+           filename=filename_prefix+'_'+str(ci)+'.png'
+           plt.savefig(filename)
 
 
     def close(self):
@@ -411,7 +520,7 @@ if __name__ == '__main__':
                         help='which array to use: A12 or SKA')
     parser.add_argument('--seed',default=0,type=int,metavar='i',
        help='random seed to use')
-    parser.add_argument('--episodes',default=30000,type=int,metavar='i',
+    parser.add_argument('--episodes',default=10000,type=int,metavar='i',
        help='number of episodes to simulate')
     parser.add_argument('--render', action='store_true', default=False,
        help='produce graphical output (slow)')
@@ -419,13 +528,15 @@ if __name__ == '__main__':
        help='solve sparsity constrained DOA (slow)')
     parser.add_argument('--nearfield_fraction',default=0.3,type=float,metavar='f',
        help='fraction (out of 1) of nearfield simulations')
+    parser.add_argument('--simulate_range', action='store_true', default=False,
+       help='generate data including the range (3 dimensional, 100% nearfield)')
 
     args=parser.parse_args()
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    env=RFISparse(T=1000,buffer_size=args.episodes,telescope=args.array,nfraction=args.nearfield_fraction)
+    env=RFISparse(T=1000,buffer_size=args.episodes,telescope=args.array,nfraction=args.nearfield_fraction,simulate_range=args.simulate_range)
 
     for loop in range(args.episodes):
        env.reset()
@@ -438,6 +549,6 @@ if __name__ == '__main__':
           env.buffer.save_checkpoint()
 
        if args.render:
-          env.render(filename='pp_'+str(loop)+'.png')
+          env.render(filename_prefix='pp_'+str(loop))
 
     env.buffer.save_checkpoint()
