@@ -499,7 +499,7 @@ class RFISparse(gym.Env):
            cbar=plt.colorbar()
            cbar.set_label('Cost',fontdict=font)
            if self.simulate_range:
-              plt.suptitle(f'Range {np.exp(self.log_r[ci])/1e3} {self.rfi_range/1e3:.2f} km Freq {self.rfi_freq/1e6:.2f} MHz Pol {self.rfi_pol_gamma:.2f} {self.rfi_pol_eta:.2f} rad')
+              plt.suptitle(f'Range grid {np.exp(self.log_r[ci])/1e3:.2f} true {self.rfi_range/1e3:.2f} km Freq {self.rfi_freq/1e6:.2f} MHz Pol {self.rfi_pol_gamma:.2f} {self.rfi_pol_eta:.2f} rad')
            else:
               plt.suptitle(f'Range {self.rfi_range/1e3:.2f} km Freq {self.rfi_freq/1e6:.2f} MHz Pol {self.rfi_pol_gamma:.2f} {self.rfi_pol_eta:.2f} rad')
            plt.scatter(self.rfi_theta,self.rfi_phi,color='r')
@@ -521,7 +521,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed',default=0,type=int,metavar='i',
        help='random seed to use')
     parser.add_argument('--episodes',default=10000,type=int,metavar='i',
-       help='number of episodes to simulate')
+       help='number of episodes to simulate, reduce this if out of memory')
     parser.add_argument('--render', action='store_true', default=False,
        help='produce graphical output (slow)')
     parser.add_argument('--sparsefit', action='store_true', default=False,
