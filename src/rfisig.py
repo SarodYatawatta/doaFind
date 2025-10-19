@@ -314,10 +314,10 @@ class RFISparse(gym.Env):
                     F[3,cj,ci,cr]=logrange[cr]
 
         # normalize channels 
-        for cr in range(Nr):
-            F[0,:,:,cr]=F[0,:,:,cr]/np.max(np.abs(F[0,:,:,cr]))
+        F[0]=F[0]/np.max(np.abs(F[0]))
         F[1]=F[1]/(np.pi)
         F[2]=F[2]/(np.pi)
+        F[3]=F[3]/np.log(self.R_HIGH)
         return F
 
     def __simulate(self):
@@ -529,7 +529,7 @@ if __name__ == '__main__':
     parser.add_argument('--nearfield_fraction',default=0.3,type=float,metavar='f',
        help='fraction (out of 1) of nearfield simulations')
     parser.add_argument('--simulate_range', action='store_true', default=False,
-       help='generate data including the range (3 dimensional, 100% nearfield)')
+       help='generate data including the range (3 dimensional, 100%% nearfield)')
 
     args=parser.parse_args()
 

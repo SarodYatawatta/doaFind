@@ -49,16 +49,23 @@ class TransformerBlock(nn.Module):
         return x
 
 class ManyAttention(nn.Module):
-    def __init__(self, depth=6, embed_dim=64, num_heads=8, n_arrays=48, n_stations=6, n_grid=128, patch_size=16):
+    # nearfield RFI range (m) : must match RFISparse values
+    R_LOW=10e3
+    R_HIGH=10000e3
+    def __init__(self, depth=6, embed_dim=64, num_heads=8, n_arrays=48, n_stations=6, n_grid=128, patch_size=16, estimate_range=False):
         super().__init__()
         self.n_arrays=n_arrays
         self.embed_dim=embed_dim
+        self.estimate_range=estimate_range
         # input transforms
         self.num_patches=(n_grid//patch_size)**2
         # keys: (3+1+1)*n_arrays
         self.proj1=nn.Linear(5*n_arrays, embed_dim*self.num_patches)
-        # values: channel(=3)*patch_size*patch_size
-        self.proj2=nn.Linear(3*patch_size*patch_size, embed_dim)
+        # values: channel(=3 or 4)*patch_size*patch_size
+        if self.estimate_range:
+            self.proj2=nn.Linear(4*patch_size*patch_size, embed_dim)
+        else:
+            self.proj2=nn.Linear(3*patch_size*patch_size, embed_dim)
 
         # attention blocks
         self.mha1=nn.MultiheadAttention(embed_dim, num_heads)
@@ -68,8 +75,11 @@ class ManyAttention(nn.Module):
             for _ in range(depth)
         ])
 
-        # output transforms
-        self.out_linear=nn.Linear(embed_dim,2)
+        # output transforms (2 for DOA, 3 for DOA with range)
+        if self.estimate_range:
+            self.out_linear=nn.Linear(embed_dim,3)
+        else:
+            self.out_linear=nn.Linear(embed_dim,2)
 
         # dropout
         self.dropout1=nn.Dropout(0.1)
@@ -77,9 +87,13 @@ class ManyAttention(nn.Module):
 
         self.checkpoint_file='transformer_model.npy'
 
-        # constans for final transform
-        self.A=torch.tensor([1, 0]).float().to(mydevice)
-        self.B=torch.tensor([0.5*np.pi/2, np.pi]).float().to(mydevice)
+        # constans for final transform ([-1,1]+A)*B -> [low,high]
+        if self.estimate_range:
+            self.A=torch.tensor([1, 0, (np.log(self.R_LOW)+np.log(self.R_HIGH))/(np.log(self.R_HIGH)-np.log(self.R_LOW))]).float().to(mydevice)
+            self.B=torch.tensor([0.5*np.pi/2, np.pi, (np.log(self.R_HIGH)-np.log(self.R_LOW))/2]).float().to(mydevice)
+        else:
+            self.A=torch.tensor([1, 0]).float().to(mydevice)
+            self.B=torch.tensor([0.5*np.pi/2, np.pi]).float().to(mydevice)
 
         init_layer(self.proj1)
         init_layer(self.proj2)
@@ -91,7 +105,7 @@ class ManyAttention(nn.Module):
         keys=self.dropout1(self.proj1(x))
         keys=keys.reshape(batch_size,self.num_patches,self.embed_dim)
         keys=keys.permute(1,0,2)
-        # y: seq, batch, channel(=3)*patch_size*patch_size (value)
+        # y: seq, batch, channel(=3 or 4)*patch_size*patch_size (value)
         values=self.dropout2(self.proj2(y))
         query=keys
         attn1,_=self.mha1(query,keys,values)
@@ -104,7 +118,7 @@ class ManyAttention(nn.Module):
         pooled=x.mean(dim=0)
         # map to [-1,1]
         x=torch.tanh(self.out_linear(pooled))
-        # map x[0] to [0,pi/2] and x[1] to [-pi,pi]
+        # map x[0] to [0,pi/2] and x[1] to [-pi,pi] and x[2] to log([low,high])
         x = (x + self.A)*self.B
         return x
 
