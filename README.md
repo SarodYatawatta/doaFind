@@ -1,6 +1,5 @@
 # doaFind
-Direction of arrival estimation using radio interferometric arrays
-
+Direction of arrival estimation using radio interferometric arrays. Methods are described in [this paper](https://arxiv.org/abs/2510.15116).
 
 Run from *./src* directory. Pass *A12* or *SKA* for *--array* option.
 
