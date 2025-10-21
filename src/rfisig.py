@@ -305,8 +305,12 @@ class RFISparse(gym.Env):
                     # find unit vec =R s^ - (pos), for all baselines
                     rr=np.matlib.repmat(r[cr]*shat,B,1)-positions
                     ff=np.zeros(B)
-                    for b in range(B):
-                        ff[b]=np.dot(rr[b],directions[b])/(np.linalg.norm(rr[b])+1e-6)
+                    # simplify calculation of 
+                    # for b in range(B):
+                    #    ff[b]=np.dot(rr[b],directions[b])/(np.linalg.norm(rr[b])+1e-6)
+                    numerator=np.sum(rr*directions,axis=1)
+                    denominator=np.sqrt(np.sum(rr*rr,axis=1)+1e-6)
+                    ff=numerator/denominator
                     fval=(ff**2-sintheta**2)**2
                     F[0,cj,ci,cr]=np.sum(fval)
                     F[1,cj,ci,cr]=theta[ci]
