@@ -65,8 +65,8 @@ def loss_function_3d(x,y,telescope='A12'):
       loss2=1-dotp
       loss=torch.min(loss1,loss2)
 
-    # log(range) loss
-    range_loss=(r-r0)**2
+    # log(range) loss (normalized by true log(range))
+    range_loss=(r-r0)**2/r**2
 
     return torch.sum(loss+0.1*range_loss)/batch_size
 
