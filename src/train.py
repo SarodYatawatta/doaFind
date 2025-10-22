@@ -89,6 +89,8 @@ if __name__ == '__main__':
        help='learning rate')
     parser.add_argument('--estimate_range', action='store_true', default=False,
        help='use data including the range (3 dimensional, 100%% nearfield)')
+    parser.add_argument('--range_grid',default=4,type=int,metavar='g',
+       help='number of range grid points')
     parser.add_argument('--load', action='store_true', default=False,
        help='load saved model')
  
@@ -98,16 +100,17 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
 
     if args.array=='SKA':
-       net=ManyAttention(depth=6, embed_dim=96, num_heads=8, n_arrays=53, n_stations=6, estimate_range=args.estimate_range).to(mydevice)
+       net=ManyAttention(depth=6, embed_dim=96, num_heads=8, n_arrays=53, n_stations=6, estimate_range=args.estimate_range, n_range=args.range_grid).to(mydevice)
     else:
-       net=ManyAttention(depth=6, embed_dim=64, num_heads=8, n_arrays=48, n_stations=6, estimate_range=args.estimate_range).to(mydevice)
+       net=ManyAttention(depth=6, embed_dim=64, num_heads=8, n_arrays=48, n_stations=6, estimate_range=args.estimate_range, n_range=args.range_grid).to(mydevice)
     if args.load:
        net.load_checkpoint()
     if args.estimate_range:
+        # note: n_range must match what is used in simulation
         if args.array=='SKA':
-           buffer=ReplayBuffer3D(args.episodes, n_arrays=53, n_stations=6, n_grid=128)
+           buffer=ReplayBuffer3D(args.episodes, n_arrays=53, n_stations=6, n_grid=128,n_range=args.range_grid)
         else:
-           buffer=ReplayBuffer3D(args.episodes, n_arrays=48, n_stations=6, n_grid=128)
+           buffer=ReplayBuffer3D(args.episodes, n_arrays=48, n_stations=6, n_grid=128,n_range=args.range_grid)
     else:
         if args.array=='SKA':
            buffer=ReplayBuffer(args.episodes, n_arrays=53, n_stations=6, n_grid=128)

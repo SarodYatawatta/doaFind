@@ -170,8 +170,11 @@ class ReplayBuffer3D(object):
         # freqs: 1, not used for training, but useful for visualizing
         values, directions, distances, sinthetas, targets, freqs = self.sample_buffer(batch_size)
         unfold=nn.Unfold(kernel_size=[patch_size,patch_size], stride=[patch_size,patch_size])
+        # batch x channel x n_grid x n_grid x n_range
         values=torch.tensor(values)
         patches=[unfold(values[:,:,:,:,ci]) for ci in range(self.n_range)] # list of n_range, each batch, channel*patch_size*patch_size, num_patches
+        # concat over num_patches
+        patches=torch.cat(patches,dim=2)
         value=patches.permute(2,0,1) # num_patches(=sequence),n_range*batch,channel*patch_size*patch_size
         key=torch.cat((torch.tensor(directions.reshape(batch_size,3*self.n_arrays)),torch.tensor(distances),torch.tensor(sinthetas)),dim=1) # batch x (3*n_arrays+n_arrays+n_arrays)
         target=torch.tensor(targets)
