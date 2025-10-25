@@ -40,7 +40,7 @@ class RFISparse(gym.Env):
     R_LOW=10e3
     R_HIGH=10000e3
 
-    def __init__(self,T=1000,buffer_size=20000,telescope='A12',nfraction=0.3,simulate_range=False):
+    def __init__(self,T=1000,buffer_size=20000,telescope='A12',nfraction=0.3,simulate_range=False, n_range=4):
         super(RFISparse,self).__init__()
 
         self.n_time=T
@@ -100,7 +100,7 @@ class RFISparse(gym.Env):
         self.patch_size=16
         # if range is simulated (simulate_range=True)
         if self.simulate_range:
-           self.n_range=4
+           self.n_range=n_range
            self.log_r=np.log(np.arange(self.R_LOW,self.R_HIGH,(self.R_HIGH-self.R_LOW)/self.n_range))
         else:
            self.n_range=1
@@ -534,13 +534,15 @@ if __name__ == '__main__':
        help='fraction (out of 1) of nearfield simulations')
     parser.add_argument('--simulate_range', action='store_true', default=False,
        help='generate data including the range (3 dimensional, 100%% nearfield)')
+    parser.add_argument('--range_grid',default=4,type=int,metavar='g',
+       help='number of range grid points')
 
     args=parser.parse_args()
 
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    env=RFISparse(T=1000,buffer_size=args.episodes,telescope=args.array,nfraction=args.nearfield_fraction,simulate_range=args.simulate_range)
+    env=RFISparse(T=1000,buffer_size=args.episodes,telescope=args.array,nfraction=args.nearfield_fraction,simulate_range=args.simulate_range,n_range=args.range_grid)
 
     for loop in range(args.episodes):
        env.reset()
