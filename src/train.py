@@ -99,6 +99,7 @@ if __name__ == '__main__':
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
+    # note: n_range must match what is used in simulation
     if args.array=='SKA':
        net=ManyAttention(depth=6, embed_dim=96, num_heads=8, n_arrays=53, n_stations=6, estimate_range=args.estimate_range, n_range=args.range_grid).to(mydevice)
     else:
@@ -106,7 +107,6 @@ if __name__ == '__main__':
     if args.load:
        net.load_checkpoint()
     if args.estimate_range:
-        # note: n_range must match what is used in simulation
         if args.array=='SKA':
            buffer=ReplayBuffer3D(args.episodes, n_arrays=53, n_stations=6, n_grid=128,n_range=args.range_grid)
         else:

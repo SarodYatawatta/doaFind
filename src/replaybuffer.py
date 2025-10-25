@@ -164,7 +164,7 @@ class ReplayBuffer3D(object):
     def sample_observation(self, batch_size, patch_size):
         # return transformed versions of 
         # value, direction, log(distance), sintheta as torch.tensors
-        # value: unfolded into patches: num_patches, n_range*batch, channel*patch_size*patch_size
+        # value: unfolded into patches: num_patches*n_range, batch, channel*patch_size*patch_size
         # keys: concat(direction: 3*n_arrays, log(distance): n_arrays, sintheta: n_arrays)
         # target: 3x1
         # freqs: 1, not used for training, but useful for visualizing
@@ -173,13 +173,13 @@ class ReplayBuffer3D(object):
         # batch x channel x n_grid x n_grid x n_range
         values=torch.tensor(values)
         patches=[unfold(values[:,:,:,:,ci]) for ci in range(self.n_range)] # list of n_range, each batch, channel*patch_size*patch_size, num_patches
-        # concat over num_patches
+        # concat over num_patches, so num_patches <= num_patches*n_range
         patches=torch.cat(patches,dim=2)
-        value=patches.permute(2,0,1) # num_patches(=sequence),n_range*batch,channel*patch_size*patch_size
+        value=patches.permute(2,0,1) # num_patches(=sequence)*n_range,batch,channel*patch_size*patch_size
         key=torch.cat((torch.tensor(directions.reshape(batch_size,3*self.n_arrays)),torch.tensor(distances),torch.tensor(sinthetas)),dim=1) # batch x (3*n_arrays+n_arrays+n_arrays)
         target=torch.tensor(targets)
 
-        # value: num_patches x n_range*batch x channel(=4)*patch_size*patch_size
+        # value: num_patches*n_range x batch x channel(=4)*patch_size*patch_size
         # key: batch x (3+1+1)*n_arrays
         # target: batch x 3
         return value,key,target,freqs

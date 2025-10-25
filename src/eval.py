@@ -94,8 +94,8 @@ def render3D(array_F,theta0,phi0,r0,theta,phi,r,freq,filename='pp.png',telescope
 
   doa2=np.array([np.cos(x)*np.cos(y), np.cos(x)*np.sin(y), np.sin(x)])
   # Print arccos(cosine_similarity) of two directions 
-  # freq/MHz (transformer) (minimum)
-  print(f'{freq/1e6} {error} {np.arccos(np.dot(doa0,doa2))} {(r-r0)**2/r0**2}')
+  # freq/MHz (transformer) (minimum) range true(km)/est(km)/error
+  print(f'{freq/1e6:.2f} {error:.4f} {np.arccos(np.dot(doa0,doa2)):.4f} {r0/1e3:.2f} {r/1e3:.2f} {(r-r0)**2/r0**2:.2f}')
 
 
 
@@ -110,22 +110,24 @@ if __name__ == '__main__':
        help='number of episodes stored in the buffer')
     parser.add_argument('--estimate_range', action='store_true', default=False,
        help='use data including the range (3 dimensional, 100%% nearfield)')
+    parser.add_argument('--range_grid',default=4,type=int,metavar='g',
+       help='number of range grid points')
     parser.add_argument('--iterations',default=1,type=int,metavar='g',
        help='number of evaluations')
  
     args=parser.parse_args()
  
     if args.array=='SKA':
-       net=ManyAttention(depth=6, embed_dim=96, num_heads=8, n_arrays=53, n_stations=6, estimate_range=args.estimate_range).to(mydevice)
+       net=ManyAttention(depth=6, embed_dim=96, num_heads=8, n_arrays=53, n_stations=6, estimate_range=args.estimate_range, n_range=args.range_grid).to(mydevice)
     else:
-       net=ManyAttention(depth=6, embed_dim=64, num_heads=8, n_arrays=48, n_stations=6, estimate_range=args.estimate_range).to(mydevice)
+       net=ManyAttention(depth=6, embed_dim=64, num_heads=8, n_arrays=48, n_stations=6, estimate_range=args.estimate_range, n_range=args.range_grid).to(mydevice)
     net.load_checkpoint()
     net.eval()
     if args.estimate_range:
        if args.array=='SKA':
-          buffer=ReplayBuffer3D(args.episodes, n_arrays=53, n_stations=6, n_grid=128)
+          buffer=ReplayBuffer3D(args.episodes, n_arrays=53, n_stations=6, n_grid=128, n_range=args.range_grid)
        else:
-          buffer=ReplayBuffer3D(args.episodes, n_arrays=48, n_stations=6, n_grid=128)
+          buffer=ReplayBuffer3D(args.episodes, n_arrays=48, n_stations=6, n_grid=128, n_range=args.range_grid)
     else:
        if args.array=='SKA':
           buffer=ReplayBuffer(args.episodes, n_arrays=53, n_stations=6, n_grid=128)
@@ -139,15 +141,15 @@ if __name__ == '__main__':
        values=values.to(mydevice)
        keys=keys.to(mydevice)
        output=net(keys,values)
-       # undo transfroms to values # num_patches, n_range*batch(=1), channel(=3 or 4)*patch_size*patch_size
+       # undo transfroms to values # num_patches*n_range, batch(=1), channel(=3 or 4)*patch_size*patch_size
        values=values.permute(1,2,0)
-       # to n_range*batch, num_patches, channel*patch_size*patch_size 
+       # to batch, num_patches*n_range, channel*patch_size*patch_size 
        fold=nn.Fold(output_size=(128,128),kernel_size=[patch_size,patch_size],stride=[patch_size,patch_size])
        if args.estimate_range:
-           n_range=values.shape[0] # batch=1
+           num_patches=values.shape[2]//args.range_grid
            output=output.cpu().data.numpy()
-           for cn in range(n_range):
-               val=fold(values[cn])
+           for cn in range(args.range_grid):
+               val=fold(values[:,:,cn*num_patches:(cn+1)*num_patches])
                val=val.cpu().data.numpy()
                render3D(val[0],targets[0][0],targets[0][1],np.exp(targets[0][2]),output[0][0],output[0][1],np.exp(output[0][2]),freqs[0],filename='eval_'+str(ci)+'_'+str(cn)+'.png',telescope=args.array)
        else:
