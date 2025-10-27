@@ -13,6 +13,7 @@ from replaybuffer import ReplayBuffer,ReplayBuffer3D
 import telescope_config
 import phase_utils
 import sparsefit
+import music_search
 
 fig=plt.figure(1)
 fig.tight_layout()
@@ -464,6 +465,27 @@ class RFISparse(gym.Env):
         plt.ylabel('Azimuth (rad)',fontdict=font)
         plt.savefig(filename)
 
+    def music_search(self,filename='R.png'):
+        fvu=np.unique(self.fv.reshape(-1,1))
+        N=fvu.size
+        xyz=np.zeros((N,3))
+        for ci in range(N):
+          xyz[ci]=self.antpos[fvu[ci]]
+
+        az_grid=np.arange(0,2*np.pi,2*np.pi/self.n_grid)
+        el_grid=np.arange(0,np.pi/2,np.pi/2/self.n_grid)
+
+        music_spectrum=music_search.run_music(
+                self.Rxx, xyz, self.wavelength, az_grid, el_grid
+        )
+        plt.clf()
+        plt.imshow(music_spectrum,aspect='auto',origin='lower',extent=[0,np.pi/2,0,2*np.pi])
+        plt.xlabel('Elevation (rad)',fontdict=font)
+        plt.ylabel('Azimuth (rad)',fontdict=font)
+        cbar=plt.colorbar()
+        cbar.set_label('MUSIC spectrum',fontdict=font)
+
+        plt.savefig(filename)
 
     def reset(self):
         self.__reset_rfi()
@@ -548,7 +570,8 @@ if __name__ == '__main__':
        env.reset()
        env.process()
        if args.sparsefit:
-          env.sparse_fit(filename='R_'+str(loop)+'.png')
+          env.music_search(filename='music_'+str(loop)+'.png')
+          #env.sparse_fit(filename='R_'+str(loop)+'.png')
 
        if loop%1000==0:
           print(f'iteration {loop}')
@@ -556,5 +579,6 @@ if __name__ == '__main__':
 
        if args.render:
           env.render(filename_prefix='pp_'+str(loop))
+
 
     env.buffer.save_checkpoint()
