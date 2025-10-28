@@ -478,13 +478,6 @@ class RFISparse(gym.Env):
         music_spectrum=music_search.run_music(
                 self.Rxx, xyz, self.wavelength, az_grid, el_grid
         )
-        plt.clf()
-        plt.imshow(music_spectrum,aspect='auto',origin='lower',extent=[0,np.pi/2,0,2*np.pi])
-        plt.xlabel('Elevation (rad)',fontdict=font)
-        plt.ylabel('Azimuth (rad)',fontdict=font)
-        cbar=plt.colorbar()
-        cbar.set_label('MUSIC spectrum',fontdict=font)
-
         # find peak 
         m_az,m_el=np.unravel_index(np.argmax(np.abs(music_spectrum)),music_spectrum.shape)
         # angle estimate
@@ -494,6 +487,16 @@ class RFISparse(gym.Env):
         doa0=np.array([np.cos(self.rfi_theta)*np.cos(self.rfi_phi), np.cos(self.rfi_theta)*np.sin(self.rfi_phi), np.sin(self.rfi_theta)])
         doa=np.array([np.cos(m_el)*np.cos(m_az), np.cos(m_el)*np.sin(m_az), np.sin(m_el)])
         error=np.arccos(np.dot(doa0,doa))
+
+        plt.clf()
+        plt.imshow(music_spectrum,aspect='auto',origin='lower',extent=[0,np.pi/2,0,2*np.pi])
+        plt.xlabel('Elevation (rad)',fontdict=font)
+        plt.ylabel('Azimuth (rad)',fontdict=font)
+        plt.suptitle(f'Range {self.rfi_range/1e3:.2f} km Freq {self.rfi_freq/1e6:.2f} MHz Pol {self.rfi_pol_gamma:.2f} {self.rfi_pol_eta:.2f} rad Error {error:.4f}')
+        plt.scatter(self.rfi_theta,self.rfi_phi,color='r')
+        cbar=plt.colorbar()
+        cbar.set_label('MUSIC spectrum',fontdict=font)
+
 
         print(f'MUSIC El {m_el} {self.rfi_theta} Az {m_az} {self.rfi_phi} {error}')
 
