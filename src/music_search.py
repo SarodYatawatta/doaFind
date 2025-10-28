@@ -15,8 +15,10 @@ def steering_vector(az,el,xyz,wavelength):
 def run_music(R_xx, array_coords, wavelength, az_grid, el_grid):
     music_spectrum=np.zeros((az_grid.size,el_grid.size))
     eig, evec = np.linalg.eig(R_xx)
-    # assume first as the dominant eigenvalue
+    # sort and remove the dominant eigenvalue
+    idx= eig.argsort()[::-1]
     # noise subspace
+    evec=evec[:,idx]
     E=evec[:,1:]
     EE=np.matmul(E,np.conjugate(E.T))
     for ci in range(az_grid.size):

@@ -485,6 +485,18 @@ class RFISparse(gym.Env):
         cbar=plt.colorbar()
         cbar.set_label('MUSIC spectrum',fontdict=font)
 
+        # find peak 
+        m_az,m_el=np.unravel_index(np.argmax(np.abs(music_spectrum)),music_spectrum.shape)
+        # angle estimate
+        m_az=m_az*2*np.pi/self.n_grid
+        m_el=m_el*0.5*np.pi/self.n_grid
+        # angular error
+        doa0=np.array([np.cos(self.rfi_theta)*np.cos(self.rfi_phi), np.cos(self.rfi_theta)*np.sin(self.rfi_phi), np.sin(self.rfi_theta)])
+        doa=np.array([np.cos(m_el)*np.cos(m_az), np.cos(m_el)*np.sin(m_az), np.sin(m_el)])
+        error=np.arccos(np.dot(doa0,doa))
+
+        print(f'MUSIC El {m_el} {self.rfi_theta} Az {m_az} {self.rfi_phi} {error}')
+
         plt.savefig(filename)
 
     def reset(self):
