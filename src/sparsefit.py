@@ -9,28 +9,28 @@ def steering_vector_dual_pol(az, el, array_coords, wavelength):
     Calculates the V and H steering vectors for a dual-polarized array.
 
     Args:
-        az (float): Azimuth angle in degrees.
-        el (float): Elevation angle in degrees.
-        array_coords (np.ndarray): A (M x 3) numpy array of element coords.
+        N : total receivers
+        az (float): Azimuth angle in rad.
+        el (float): Elevation angle in rad.
+        array_coords (np.ndarray): A (N x 3) numpy array of element coords.
         wavelength (float): Wavelength of the signal.
 
     Returns:
-        tuple: A tuple containing (a_v, a_h), the vertical (2M x 1) and
-               horizontal (2M x 1) steering vectors.
+        tuple: A tuple containing (a_v, a_h), the vertical (2N x 1) and
+               horizontal (2N x 1) steering vectors.
     """
-    M = array_coords.shape[0]
+    N = array_coords.shape[0]
     
-    # Standard spatial steering vector (M x 1)
-    az_rad, el_rad = np.deg2rad(az), np.deg2rad(el)
+    # Standard spatial steering vector (N x 1)
     k = 2 * np.pi / wavelength
-    u = np.array([np.cos(el_rad) * np.cos(az_rad), np.cos(el_rad) * np.sin(az_rad), np.sin(el_rad)])
+    u = np.array([np.cos(el) * np.cos(az), np.cos(el) * np.sin(az), np.sin(el)])
     v_a = np.exp(-1j * k * (array_coords @ u)).reshape(-1, 1)
 
     # Polarization basis vectors (2 x 1)
     v_p_V = np.array([[1], [0]]) # Vertical
     v_p_H = np.array([[0], [1]]) # Horizontal
 
-    # Combine using Kronecker product to get the full 2M x 1 steering vectors
+    # Combine using Kronecker product to get the full 2N x 1 steering vectors
     a_v = np.kron(v_p_V, v_a)
     a_h = np.kron(v_p_H, v_a)
     
@@ -39,15 +39,27 @@ def steering_vector_dual_pol(az, el, array_coords, wavelength):
 def sparsity_doa(R_xx, array_coords, wavelength, az_grid, el_grid, lambda_reg):
     """
     Performs 2D DOA estimation from the covariance matrix of a dual-polarized array.
+
+    y = A s + n, 
+    N: stations, Ng: grid points in 1 dimension, total: Ng^2
+    A : steering vectors for all directions to search N x Ng^2
+    s: sparse source vector Ng^2 possible locations, 
+    y: voltage, N for single polarization
+
+    R=E{ y y^H } : NxN 
+    R=A (s s^H) A^H, r=vec(R)=vec(A (s s^H) A^H) = A^* \\kron A vec(s s^H)
+    r = A^* \\kron A vec( s s^H) = A^ s^
+    r: N^2,
+    A^ : N^2 x Ng^4
+    s^ : Ng^4 sparse vector
     """
     num_elements = array_coords.shape[0]
     num_total_channels = 2 * num_elements
     
-    # 1. Vectorize the sample covariance matrix (now 4M^2 x 1)
+    # 1. Vectorize the sample covariance matrix (now 4N^2 x 1)
     r_vec = R_xx.T.flatten().reshape(-1, 1)
 
     # 2. Build the new dictionary matrix (B_grid) for dual polarization
-    print("Building the dual-polarized covariance dictionary matrix...")
     grid_atoms = []
     for el in el_grid:
         for az in az_grid:
@@ -55,6 +67,7 @@ def sparsity_doa(R_xx, array_coords, wavelength, az_grid, el_grid, lambda_reg):
             a_v, a_h = steering_vector_dual_pol(az, el, array_coords, wavelength)
             
             # Create the two corresponding atoms and add them to the dictionary
+            # elements of A^* \kron A
             atom_v = np.kron(a_v.conj(), a_v)
             atom_h = np.kron(a_h.conj(), a_h)
             grid_atoms.append(atom_v)
@@ -62,9 +75,11 @@ def sparsity_doa(R_xx, array_coords, wavelength, az_grid, el_grid, lambda_reg):
             
     B_grid = np.hstack(grid_atoms)
     num_grid_points = B_grid.shape[1]
-    print(f"Dictionary shape: {B_grid.shape}")
+    print(f"problem size {r_vec.shape} {B_grid.shape}")
 
     # 3. Set up the convex optimization problem (LASSO)
+    # min || r_vec - B_grid s^ ||_2^2 + \lambda ||s^||_1, s^ is sparse
+    # 
     # The variable 'p' contains interleaved V and H powers. It must be non-negative.
     p_grid = cp.Variable((num_grid_points, 1), nonneg=True)
     data_fidelity = cp.sum_squares(r_vec - B_grid @ p_grid)
@@ -72,7 +87,6 @@ def sparsity_doa(R_xx, array_coords, wavelength, az_grid, el_grid, lambda_reg):
     objective = cp.Minimize(data_fidelity + lambda_reg * sparsity_term)
 
     # 4. Solve the problem
-    print("Solving the convex optimization problem...")
     problem = cp.Problem(objective)
     problem.solve(solver=cp.SCS, verbose=False)
 

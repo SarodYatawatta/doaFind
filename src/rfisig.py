@@ -452,8 +452,8 @@ class RFISparse(gym.Env):
         for ci in range(N):
           xyz[ci]=self.antpos[fvu[ci]]
 
-        az_grid=np.arange(0,361,10)
-        el_grid=np.arange(0,91,10)
+        az_grid=np.arange(0,2*np.pi,2*np.pi/10)
+        el_grid=np.arange(0,np.pi/2,np.pi/2/10)
         lambda_reg=10
 
         total_power=sparsefit.sparsity_doa(
@@ -567,6 +567,8 @@ if __name__ == '__main__':
        help='produce graphical output (slow)')
     parser.add_argument('--sparsefit', action='store_true', default=False,
        help='solve sparsity constrained DOA (slow)')
+    parser.add_argument('--music', action='store_true', default=False,
+       help='solve using MUSIC')
     parser.add_argument('--nearfield_fraction',default=0.3,type=float,metavar='f',
        help='fraction (out of 1) of nearfield simulations')
     parser.add_argument('--simulate_range', action='store_true', default=False,
@@ -585,8 +587,9 @@ if __name__ == '__main__':
        env.reset()
        env.process()
        if args.sparsefit:
+          env.sparse_fit(filename='R_'+str(loop)+'.png')
+       if args.music:
           env.music_search(filename='music_'+str(loop)+'.png')
-          #env.sparse_fit(filename='R_'+str(loop)+'.png')
 
        if loop%1000==0:
           print(f'iteration {loop}')
