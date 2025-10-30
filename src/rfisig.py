@@ -39,7 +39,7 @@ class RFISparse(gym.Env):
     metadata={'render.modes':['human']}
     # nearfield RFI range (m)
     R_LOW=10e3
-    R_HIGH=10000e3
+    R_HIGH=40000e3
 
     def __init__(self,T=1000,buffer_size=20000,telescope='A12',nfraction=0.3,simulate_range=False, n_range=4):
         super(RFISparse,self).__init__()
@@ -96,7 +96,7 @@ class RFISparse(gym.Env):
         self.fv=None
         self.Rxx=None
 
-        # evaluation settings
+        # 2D sampling parameters
         self.n_grid=128
         self.patch_size=16
         # if range is simulated (simulate_range=True)

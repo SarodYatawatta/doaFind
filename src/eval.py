@@ -116,6 +116,9 @@ if __name__ == '__main__':
        help='number of evaluations')
  
     args=parser.parse_args()
+    # 2D sampling parameters
+    n_grid=128
+    patch_size=16
  
     if args.array=='SKA':
        net=ManyAttention(depth=6, embed_dim=96, num_heads=8, n_arrays=53, n_stations=6, estimate_range=args.estimate_range, n_range=args.range_grid).to(mydevice)
@@ -125,17 +128,16 @@ if __name__ == '__main__':
     net.eval()
     if args.estimate_range:
        if args.array=='SKA':
-          buffer=ReplayBuffer3D(args.episodes, n_arrays=53, n_stations=6, n_grid=128, n_range=args.range_grid)
+          buffer=ReplayBuffer3D(args.episodes, n_arrays=53, n_stations=6, n_grid=n_grid, n_range=args.range_grid)
        else:
-          buffer=ReplayBuffer3D(args.episodes, n_arrays=48, n_stations=6, n_grid=128, n_range=args.range_grid)
+          buffer=ReplayBuffer3D(args.episodes, n_arrays=48, n_stations=6, n_grid=n_grid, n_range=args.range_grid)
     else:
        if args.array=='SKA':
-          buffer=ReplayBuffer(args.episodes, n_arrays=53, n_stations=6, n_grid=128)
+          buffer=ReplayBuffer(args.episodes, n_arrays=53, n_stations=6, n_grid=n_grid)
        else:
-          buffer=ReplayBuffer(args.episodes, n_arrays=48, n_stations=6, n_grid=128)
+          buffer=ReplayBuffer(args.episodes, n_arrays=48, n_stations=6, n_grid=n_grid)
     buffer.load_checkpoint()
 
-    patch_size=16
     for ci in range(args.iterations):
        values,keys,targets,freqs=buffer.sample_observation(batch_size=1,patch_size=patch_size)
        values=values.to(mydevice)
@@ -144,7 +146,7 @@ if __name__ == '__main__':
        # undo transfroms to values # num_patches*n_range, batch(=1), channel(=3 or 4)*patch_size*patch_size
        values=values.permute(1,2,0)
        # to batch, num_patches*n_range, channel*patch_size*patch_size 
-       fold=nn.Fold(output_size=(128,128),kernel_size=[patch_size,patch_size],stride=[patch_size,patch_size])
+       fold=nn.Fold(output_size=(n_grid,n_grid),kernel_size=[patch_size,patch_size],stride=[patch_size,patch_size])
        if args.estimate_range:
            num_patches=values.shape[2]//args.range_grid
            output=output.cpu().data.numpy()

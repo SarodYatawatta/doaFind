@@ -51,7 +51,7 @@ class TransformerBlock(nn.Module):
 class ManyAttention(nn.Module):
     # nearfield RFI range (m) : must match RFISparse values
     R_LOW=10e3
-    R_HIGH=10000e3
+    R_HIGH=40000e3
     def __init__(self, depth=6, embed_dim=64, num_heads=8, n_arrays=48, n_stations=6, n_grid=128, patch_size=16, n_range=2, estimate_range=False):
         super().__init__()
         self.n_arrays=n_arrays
