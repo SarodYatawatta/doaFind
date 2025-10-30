@@ -498,7 +498,7 @@ class RFISparse(gym.Env):
         cbar.set_label('MUSIC spectrum',fontdict=font)
 
 
-        print(f'MUSIC El {m_el} {self.rfi_theta} Az {m_az} {self.rfi_phi} {error}')
+        print(f'MUSIC Range {self.rfi_range/1e3:.2f} km Freq {self.rfi_freq/1e6:.2f} MHz Pol {self.rfi_pol_gamma:.2f} {self.rfi_pol_eta:.2f} rad Elevation {m_el:.2f} true {self.rfi_theta:.2f} Azimuth {m_az:.2f} true {self.rfi_phi:.2f} {error} rad')
 
         plt.savefig(filename)
 
