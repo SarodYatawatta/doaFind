@@ -85,6 +85,8 @@ if __name__ == '__main__':
        help='number of episodes stored in the buffer')
     parser.add_argument('--iterations',default=30000,type=int,metavar='g',
        help='number of learning iterations')
+    parser.add_argument('--batch_size',default=256,type=int,metavar='g',
+       help='batch size')
     parser.add_argument('--learning_rate',default=1e-6,type=float,metavar='g',
        help='learning rate')
     parser.add_argument('--estimate_range', action='store_true', default=False,
@@ -121,7 +123,7 @@ if __name__ == '__main__':
     optimizer = optim.Adam(net.parameters(),lr=args.learning_rate)
 
     for n_iter in range(args.iterations):
-       values,keys,targets,_=buffer.sample_observation(batch_size=256,patch_size=16)
+       values,keys,targets,_=buffer.sample_observation(batch_size=args.batch_size,patch_size=16)
        values=Variable(values).to(mydevice)
        keys=Variable(keys).to(mydevice)
        targets=Variable(targets).to(mydevice)
