@@ -102,6 +102,7 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
 
     # note: n_range must match what is used in simulation
+    # for near-field case, n_range is ignored so no need to modify it below
     if args.array=='SKA':
        net=ManyAttention(depth=6, embed_dim=96, num_heads=8, n_arrays=53, n_stations=6, estimate_range=args.estimate_range, n_range=args.range_grid).to(mydevice)
     else:
